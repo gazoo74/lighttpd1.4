@@ -176,6 +176,14 @@ ssl_info_callback (const SSL *ssl, int where, int ret)
     }
 }
 
+static int
+verifyclient_ignore_callback(int preverify_ok, X509_STORE_CTX *x509_ctx)
+{
+    UNUSED(preverify_ok);
+    UNUSED(x509_ctx);
+
+    return 1;
+}
 
 #ifndef OPENSSL_NO_TLSEXT
 static int mod_openssl_patch_connection (server *srv, connection *con, handler_ctx *hctx);
@@ -241,6 +249,7 @@ network_ssl_servername_callback (SSL *ssl, int *al, server *srv)
 
     if (hctx->conf.ssl_verifyclient) {
         int mode;
+        int (*verify_callback)(int, X509_STORE_CTX *);
         if (NULL == hctx->conf.ssl_ca_file_cert_names) {
             log_error_write(srv, __FILE__, __LINE__, "ssb:s", "SSL:",
                             "can't verify client without ssl.ca-file "
@@ -254,10 +263,12 @@ network_ssl_servername_callback (SSL *ssl, int *al, server *srv)
         /* forcing verification here is really not that useful
          * -- a client could just connect without SNI */
         mode = SSL_VERIFY_PEER;
+        verify_callback = verifyclient_ignore_callback;
         if (hctx->conf.ssl_verifyclient_enforce) {
             mode |= SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
+            verify_callback = NULL;
         }
-        SSL_set_verify(ssl, mode, NULL);
+        SSL_set_verify(ssl, mode, verify_callback);
         SSL_set_verify_depth(ssl, hctx->conf.ssl_verifyclient_depth);
     } else {
         SSL_set_verify(ssl, SSL_VERIFY_NONE, NULL);
