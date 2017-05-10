@@ -237,7 +237,8 @@ verify_callback(int preverify_ok, X509_STORE_CTX *ctx)
      * At this point, err contains the last verification error. We can use
      * it for something special
      */
-    if (!preverify_ok && (err == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT)) {
+    if (!preverify_ok && (err == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY ||
+                          err == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT)) {
         X509_NAME_oneline(X509_get_issuer_name(ctx->current_cert), buf, 256);
         fprintf(stderr, "issuer= %s\n", buf);
     }
