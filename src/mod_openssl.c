@@ -209,7 +209,7 @@ verify_callback(int preverify_ok, X509_STORE_CTX *ctx)
     ssl = X509_STORE_CTX_get_ex_data(ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
     hctx = (handler_ctx *) SSL_get_app_data(ssl);
     mydata_index = hctx->mydata_index;
-    mydata = SSL_get_ex_data(ssl, mydata_index);
+    mydata = &hctx->mydata;
     srv = hctx->srv;
 
     X509_NAME_oneline(X509_get_subject_name(err_cert), buf, 256);
