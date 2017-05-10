@@ -225,10 +225,10 @@ mydata_index = 0; // TODO
     }
 
     if (!preverify_ok) {
-        printf("verify error:num=%d:%s:depth=%d:%s\n", err,
+        fprintf(stderr, "verify error:num=%d:%s:depth=%d:%s\n", err,
         X509_verify_cert_error_string(err), depth, buf);
     } else if (mydata->verbose_mode) {
-        printf("depth=%d:%s\n", depth, buf);
+        fprintf(stderr, "depth=%d:%s\n", depth, buf);
     }
 
     /*
@@ -237,7 +237,7 @@ mydata_index = 0; // TODO
      */
     if (!preverify_ok && (err == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT)) {
         X509_NAME_oneline(X509_get_issuer_name(ctx->current_cert), buf, 256);
-        printf("issuer= %s\n", buf);
+        fprintf(stderr, "issuer= %s\n", buf);
     }
 
     if (mydata->always_continue)
