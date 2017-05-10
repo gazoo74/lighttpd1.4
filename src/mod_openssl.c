@@ -75,11 +75,19 @@ static plugin_data *plugin_data_singleton;
 static char *local_send_buffer;
 
 typedef struct {
+    int verbose_mode;
+    int verify_depth;
+    int always_continue;
+} mydata_t;
+
+typedef struct {
     SSL *ssl;
     connection *con;
     unsigned int renegotiations; /* count of SSL_CB_HANDSHAKE_START */
     int request_env_patched;
     plugin_config conf;
+    int mydata_index;
+    mydata_t mydata;
 } handler_ctx;
 
 
@@ -176,13 +184,66 @@ ssl_info_callback (const SSL *ssl, int where, int ret)
     }
 }
 
+// https://wiki.openssl.org/index.php/Manual:SSL_CTX_set_verify(3)#EXAMPLES
 static int
-verifyclient_ignore_callback(int preverify_ok, X509_STORE_CTX *x509_ctx)
+verify_callback(int preverify_ok, X509_STORE_CTX *ctx)
 {
-    UNUSED(preverify_ok);
-    UNUSED(x509_ctx);
+    char buf[256];
+    X509 *err_cert;
+    int err, depth;
+    SSL *ssl;
+    mydata_t *mydata;
+int mydata_index; // TODO
 
-    return 1;
+    err_cert = X509_STORE_CTX_get_current_cert(ctx);
+    err = X509_STORE_CTX_get_error(ctx);
+    depth = X509_STORE_CTX_get_error_depth(ctx);
+
+    /*
+     * Retrieve the pointer to the SSL of the connection currently treated
+     * and the application specific data stored into the SSL object.
+     */
+    ssl = X509_STORE_CTX_get_ex_data(ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
+mydata_index = 0; // TODO
+    mydata = SSL_get_ex_data(ssl, mydata_index);
+
+    X509_NAME_oneline(X509_get_subject_name(err_cert), buf, 256);
+
+    /*
+     * Catch a too long certificate chain. The depth limit set using
+     * SSL_CTX_set_verify_depth() is by purpose set to "limit+1" so
+     * that whenever the "depth>verify_depth" condition is met, we
+     * have violated the limit and want to log this error condition.
+     * We must do it here, because the CHAIN_TOO_LONG error would not
+     * be found explicitly; only errors introduced by cutting off the
+     * additional certificates would be logged.
+     */
+    if (depth > mydata->verify_depth) {
+        preverify_ok = 0;
+        err = X509_V_ERR_CERT_CHAIN_TOO_LONG;
+        X509_STORE_CTX_set_error(ctx, err);
+    }
+
+    if (!preverify_ok) {
+        printf("verify error:num=%d:%s:depth=%d:%s\n", err,
+        X509_verify_cert_error_string(err), depth, buf);
+    } else if (mydata->verbose_mode) {
+        printf("depth=%d:%s\n", depth, buf);
+    }
+
+    /*
+     * At this point, err contains the last verification error. We can use
+     * it for something special
+     */
+    if (!preverify_ok && (err == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT)) {
+        X509_NAME_oneline(X509_get_issuer_name(ctx->current_cert), buf, 256);
+        printf("issuer= %s\n", buf);
+    }
+
+    if (mydata->always_continue)
+        return 1;
+    else
+        return preverify_ok;
 }
 
 #ifndef OPENSSL_NO_TLSEXT
@@ -248,8 +309,6 @@ network_ssl_servername_callback (SSL *ssl, int *al, server *srv)
     }
 
     if (hctx->conf.ssl_verifyclient) {
-        int mode;
-        int (*verify_callback)(int, X509_STORE_CTX *);
         if (NULL == hctx->conf.ssl_ca_file_cert_names) {
             log_error_write(srv, __FILE__, __LINE__, "ssb:s", "SSL:",
                             "can't verify client without ssl.ca-file "
@@ -262,14 +321,24 @@ network_ssl_servername_callback (SSL *ssl, int *al, server *srv)
           ssl, SSL_dup_CA_list(hctx->conf.ssl_ca_file_cert_names));
         /* forcing verification here is really not that useful
          * -- a client could just connect without SNI */
-        mode = SSL_VERIFY_PEER;
-        verify_callback = verifyclient_ignore_callback;
         if (hctx->conf.ssl_verifyclient_enforce) {
-            mode |= SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
-            verify_callback = NULL;
+            SSL_set_verify(ssl, SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
+                           NULL);
+            SSL_set_verify_depth(ssl, hctx->conf.ssl_verifyclient_depth);
+        } else {
+            int mydata_index;
+            mydata_t *mydata;
+            handler_ctx *hctx = (handler_ctx *) SSL_get_app_data(ssl);
+            mydata = &hctx->mydata;
+            mydata_index = SSL_get_ex_new_index(0, "mydata index", NULL, NULL, NULL);
+            mydata->verbose_mode = 1;
+            mydata->verify_depth = hctx->conf.ssl_verifyclient_depth;
+            mydata->always_continue = 1;
+            SSL_set_ex_data(ssl, mydata_index, mydata);
+
+            SSL_set_verify(ssl, SSL_VERIFY_PEER, verify_callback);
+            SSL_set_verify_depth(ssl, hctx->conf.ssl_verifyclient_depth + 1);
         }
-        SSL_set_verify(ssl, mode, verify_callback);
-        SSL_set_verify_depth(ssl, hctx->conf.ssl_verifyclient_depth);
     } else {
         SSL_set_verify(ssl, SSL_VERIFY_NONE, NULL);
     }
