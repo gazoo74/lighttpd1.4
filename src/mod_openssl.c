@@ -88,6 +88,7 @@ typedef struct {
     plugin_config conf;
     int mydata_index;
     mydata_t mydata;
+    server *srv;
 } handler_ctx;
 
 
@@ -195,6 +196,7 @@ verify_callback(int preverify_ok, X509_STORE_CTX *ctx)
     handler_ctx *hctx;
     mydata_t *mydata;
     int mydata_index;
+    server *srv;
 
     err_cert = X509_STORE_CTX_get_current_cert(ctx);
     err = X509_STORE_CTX_get_error(ctx);
@@ -208,6 +210,7 @@ verify_callback(int preverify_ok, X509_STORE_CTX *ctx)
     hctx = (handler_ctx *) SSL_get_app_data(ssl);
     mydata_index = hctx->mydata_index;
     mydata = SSL_get_ex_data(ssl, mydata_index);
+    srv = hctx->srv;
 
     X509_NAME_oneline(X509_get_subject_name(err_cert), buf, 256);
 
@@ -227,10 +230,13 @@ verify_callback(int preverify_ok, X509_STORE_CTX *ctx)
     }
 
     if (!preverify_ok) {
-        fprintf(stderr, "verify error:num=%d:%s:depth=%d:%s\n", err,
-        X509_verify_cert_error_string(err), depth, buf);
+        log_error_write(srv, __FILE__, __LINE__, "sdsssdss",
+                        "SSL: verify error:num=", err, ":",
+                        X509_verify_cert_error_string(err), ":depth=", depth,
+                        ":", buf);
     } else if (mydata->verbose_mode) {
-        fprintf(stderr, "depth=%d:%s\n", depth, buf);
+        log_error_write(srv, __FILE__, __LINE__, "sdss", "SSL: depth=", depth,
+                        ":", buf);
     }
 
     /*
@@ -240,7 +246,7 @@ verify_callback(int preverify_ok, X509_STORE_CTX *ctx)
     if (!preverify_ok && (err == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY ||
                           err == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT)) {
         X509_NAME_oneline(X509_get_issuer_name(ctx->current_cert), buf, 256);
-        fprintf(stderr, "issuer= %s\n", buf);
+        log_error_write(srv, __FILE__, __LINE__, "ss", "SSL: issuer=", buf);
     }
 
     if (mydata->always_continue)
@@ -332,6 +338,7 @@ network_ssl_servername_callback (SSL *ssl, int *al, server *srv)
             int mydata_index;
             mydata_t *mydata;
             handler_ctx *hctx = (handler_ctx *) SSL_get_app_data(ssl);
+            hctx->srv = srv;
             mydata = &hctx->mydata;
             mydata_index = SSL_get_ex_new_index(0, "mydata index", NULL, NULL, NULL);
             mydata->verbose_mode = 1;
