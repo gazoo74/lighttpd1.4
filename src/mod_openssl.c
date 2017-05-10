@@ -192,8 +192,9 @@ verify_callback(int preverify_ok, X509_STORE_CTX *ctx)
     X509 *err_cert;
     int err, depth;
     SSL *ssl;
+    handler_ctx *hctx;
     mydata_t *mydata;
-int mydata_index; // TODO
+    int mydata_index;
 
     err_cert = X509_STORE_CTX_get_current_cert(ctx);
     err = X509_STORE_CTX_get_error(ctx);
@@ -204,7 +205,8 @@ int mydata_index; // TODO
      * and the application specific data stored into the SSL object.
      */
     ssl = X509_STORE_CTX_get_ex_data(ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
-mydata_index = 0; // TODO
+    hctx = (handler_ctx *) SSL_get_app_data(ssl);
+    mydata_index = hctx->mydata_index;
     mydata = SSL_get_ex_data(ssl, mydata_index);
 
     X509_NAME_oneline(X509_get_subject_name(err_cert), buf, 256);
@@ -334,7 +336,7 @@ network_ssl_servername_callback (SSL *ssl, int *al, server *srv)
             mydata->verbose_mode = 1;
             mydata->verify_depth = hctx->conf.ssl_verifyclient_depth;
             mydata->always_continue = 1;
-            SSL_set_ex_data(ssl, mydata_index, mydata);
+            SSL_set_ex_data(ssl, mydata_index, hctx);
 
             SSL_set_verify(ssl, SSL_VERIFY_PEER, verify_callback);
             SSL_set_verify_depth(ssl, hctx->conf.ssl_verifyclient_depth + 1);
