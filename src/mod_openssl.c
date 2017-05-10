@@ -195,7 +195,6 @@ verify_callback(int preverify_ok, X509_STORE_CTX *ctx)
     SSL *ssl;
     handler_ctx *hctx;
     mydata_t *mydata;
-    int mydata_index;
     server *srv;
 
     err_cert = X509_STORE_CTX_get_current_cert(ctx);
@@ -208,7 +207,6 @@ verify_callback(int preverify_ok, X509_STORE_CTX *ctx)
      */
     ssl = X509_STORE_CTX_get_ex_data(ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
     hctx = (handler_ctx *) SSL_get_app_data(ssl);
-    mydata_index = hctx->mydata_index;
     mydata = &hctx->mydata;
     srv = hctx->srv;
 
@@ -337,7 +335,6 @@ network_ssl_servername_callback (SSL *ssl, int *al, server *srv)
         } else {
             int mydata_index;
             mydata_t *mydata;
-            handler_ctx *hctx = (handler_ctx *) SSL_get_app_data(ssl);
             mydata = &hctx->mydata;
             mydata_index = SSL_get_ex_new_index(0, "mydata index", NULL, NULL, NULL);
             mydata->verbose_mode = 1;
