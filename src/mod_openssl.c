@@ -338,7 +338,6 @@ network_ssl_servername_callback (SSL *ssl, int *al, server *srv)
             int mydata_index;
             mydata_t *mydata;
             handler_ctx *hctx = (handler_ctx *) SSL_get_app_data(ssl);
-            hctx->srv = srv;
             mydata = &hctx->mydata;
             mydata_index = SSL_get_ex_new_index(0, "mydata index", NULL, NULL, NULL);
             mydata->verbose_mode = 1;
@@ -768,7 +767,6 @@ network_init_ssl (server *srv, void *p_d)
         }
 
         if (s->ssl_verifyclient) {
-            int mode;
             if (NULL == s->ssl_ca_file_cert_names) {
                 log_error_write(srv, __FILE__, __LINE__, "s",
                                 "SSL: You specified ssl.verifyclient.activate "
@@ -777,12 +775,16 @@ network_init_ssl (server *srv, void *p_d)
             }
             SSL_CTX_set_client_CA_list(
               s->ssl_ctx, SSL_dup_CA_list(s->ssl_ca_file_cert_names));
-            mode = SSL_VERIFY_PEER;
             if (s->ssl_verifyclient_enforce) {
-                mode |= SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
+                SSL_CTX_set_verify(s->ssl_ctx,
+                         SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);
+                SSL_CTX_set_verify_depth(s->ssl_ctx, s->ssl_verifyclient_depth);
+            } else {
+                SSL_CTX_set_verify(s->ssl_ctx, SSL_VERIFY_PEER,
+                                   verify_callback);
+                SSL_CTX_set_verify_depth(s->ssl_ctx,
+                                         s->ssl_verifyclient_depth + 1);
             }
-            SSL_CTX_set_verify(s->ssl_ctx, mode, NULL);
-            SSL_CTX_set_verify_depth(s->ssl_ctx, s->ssl_verifyclient_depth);
         }
 
         if (1 != SSL_CTX_use_certificate(s->ssl_ctx, s->ssl_pemfile_x509)) {
@@ -1336,6 +1338,7 @@ CONNECTION_FUNC(mod_openssl_handle_con_accept)
 
     hctx = handler_ctx_init();
     hctx->con = con;
+    hctx->srv = srv;
     con->plugin_ctx[p->id] = hctx;
     mod_openssl_patch_connection(srv, con, hctx);
 
